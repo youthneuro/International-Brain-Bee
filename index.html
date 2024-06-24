@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Dynamic Calendar with Google Sheets Events</title>
+<title>Dynamic Calendar with Events</title>
 <style>
   body {
     font-family: Arial, sans-serif;
@@ -12,16 +12,17 @@
   }
   .calendar {
     display: grid;
-    grid-template-columns: repeat(7, calc(14.28% - 5px)); /* Adjusted width for day boxes */
+    grid-template-columns: repeat(7, calc(14.28% - 5px));
     gap: 5px;
   }
   .day {
     position: relative;
-    padding: 15px; /* Increased padding for day boxes */
+    padding: 15px;
     border: 1px solid #ccc;
     text-align: center;
-    overflow: hidden; /* Prevent overflow of label */
-    white-space: nowrap; /* Prevent wrapping of label */
+    overflow: hidden;
+    cursor: pointer; /* Add cursor pointer for better UX */
+    transition: all 0.3s ease;
   }
   .header {
     font-weight: bold;
@@ -36,19 +37,41 @@
     background-color: yellow;
   }
   .label {
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
+    margin-top: 5px;
     font-size: 0.8em;
     color: red;
-    white-space: nowrap;
-    pointer-events: none; /* Prevent label from blocking click events */
+    white-space: normal; /* Allow text to wrap */
+    overflow: visible; /* Allow content to expand beyond box */
+    display: block;
+    padding: 5px; /* Increased padding for more space */
+  }
+  .tooltip {
+    position: absolute;
+    z-index: 1;
+    display: none;
+    padding: 15px; /* Increased padding for more space */
+    background-color: rgba(0, 0, 0, 0.8);
+    color: #fff;
+    font-size: 0.8em;
+    border-radius: 5px;
+    pointer-events: none;
+    bottom: calc(100% + 10px); /* Position above the day with a small gap */
+    left: 50%;
+    transform: translateX(-50%);
+    white-space: normal; /* Allow wrapping within tooltip */
+    max-width: 300px; /* Increased max width for larger tooltip */
+    min-width: 200px; /* Minimum width to ensure tooltip is visible */
+    max-height: 200px; /* Maximum height to prevent excessive growth */
+    overflow-y: auto; /* Add vertical scrollbar if content exceeds max height */
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1); /* Optional: Add box shadow for depth */
+  }
+  .day.active .tooltip {
+    display: block;
   }
 </style>
 </head>
 <body>
-  <h1>Dynamic Calendar with Google Sheets Events</h1>
+  <h1>Dynamic Calendar with Events</h1>
   
   <div class="controls">
     <button onclick="prevMonth()">Previous Month</button>
@@ -66,45 +89,46 @@
     var currentYear = currentDate.getFullYear();
     var monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
+    // Manually added events
+    const events = {
+      "06-21-2024": "IBB",
+      "06-22-2024": "IBB",
+    };
+
     // URL to your Google Sheets document
     const googleSheetsUrl = 'https://docs.google.com/spreadsheets/d/1WpoIF2B9fBGtfN71fcsvAkBC8Pt6G3u8gK9roFLVzYg/gviz/tq?tqx=out:json';
 
-    function fetchGoogleSheetData(url) {
-      return fetch(url)
-        .then(response => response.text())
-        .then(data => {
-          const jsonMatch = data.match(/google\.visualization\.Query\.setResponse\((.*?)\);/);
-          if (jsonMatch) {
-            const jsonData = JSON.parse(jsonMatch[1]);
-            const events = {};
+    // Fetch data from Google Sheets
+    fetch(googleSheetsUrl)
+      .then(response => response.text())
+      .then(data => {
+        // Extract the JSON data from the Google Sheets API response
+        const jsonMatch = data.match(/google\.visualization\.Query\.setResponse\((.*?)\);/);
+        if (jsonMatch) {
+          const jsonData = JSON.parse(jsonMatch[1]);
 
-            // Iterate over the rows in the Google Sheets data
-            const rows = jsonData.table.rows;
-            rows.forEach(row => {
-              const dateString = row.c[0].v;
-              const event = row.c[1].v;
+          // Iterate over the rows in the Google Sheets data
+          const rows = jsonData.table.rows;
+          rows.forEach(row => {
+            // Convert the date to MM-DD-YYYY format
+            const rawDate = row.c[0].v.match(/Date\((\d+),(\d+),(\d+)\)/);
+            const year = rawDate[1];
+            const month = ('0' + (parseInt(rawDate[2]) + 1)).slice(-2);
+            const day = ('0' + rawDate[3]).slice(-2);
+            const formattedDate = `${month}-${day}-${year}`;
 
-              // Store event in the events object with date as key
-              events[dateString] = event;
-            });
+            const event = row.c[1].v;
+            events[formattedDate] = event;
+          });
 
-            return events;
-          } else {
-            console.error('Error parsing Google Sheets data.');
-            return {};
-          }
-        })
-        .catch(error => {
-          console.error('Error fetching Google Sheets data:', error);
-          return {};
-        });
-    }
+          // Generate calendar after fetching data
+          generateCalendar(currentMonth, currentYear, events);
+        }
+      });
 
     function generateCalendar(month, year, events) {
       var daysInMonth = new Date(year, month + 1, 0).getDate(); // Get number of days in month
-
       var firstDay = new Date(year, month, 1).getDay(); // Get first day of the month (0-6)
-
       var calendarDiv = document.getElementById('calendar');
       calendarDiv.innerHTML = ''; // Clear previous calendar
 
@@ -136,11 +160,18 @@
         var dateString = ('0' + (month + 1)).slice(-2) + '-' + ('0' + i).slice(-2) + '-' + year;
         if (events[dateString]) {
           dayDiv.classList.add('special-day');
-          var label = document.createElement('div');
-          label.classList.add('label');
-          label.textContent = events[dateString];
-          dayDiv.appendChild(label);
-          dayDiv.textContent = ''; // Remove day number if there's an event
+          dayDiv.innerHTML = `<div>${i}</div><div class="label">${events[dateString]}</div>`;
+          
+          // Create tooltip for full event details
+          var tooltip = document.createElement('div');
+          tooltip.classList.add('tooltip');
+          tooltip.textContent = events[dateString];
+          dayDiv.appendChild(tooltip);
+
+          // Toggle tooltip visibility on click
+          dayDiv.addEventListener('click', function() {
+            dayDiv.classList.toggle('active');
+          });
         } else {
           dayDiv.textContent = i;
         }
@@ -155,10 +186,7 @@
         currentMonth = 11;
         currentYear--;
       }
-      fetchGoogleSheetData(googleSheetsUrl)
-        .then(events => {
-          generateCalendar(currentMonth, currentYear, events);
-        });
+      generateCalendar(currentMonth, currentYear, events);
     }
 
     function nextMonth() {
@@ -167,17 +195,8 @@
         currentMonth = 0;
         currentYear++;
       }
-      fetchGoogleSheetData(googleSheetsUrl)
-        .then(events => {
-          generateCalendar(currentMonth, currentYear, events);
-        });
+      generateCalendar(currentMonth, currentYear, events);
     }
-
-    // Initial calendar generation
-    fetchGoogleSheetData(googleSheetsUrl)
-      .then(events => {
-        generateCalendar(currentMonth, currentYear, events);
-      });
   </script>
 </body>
 </html>
