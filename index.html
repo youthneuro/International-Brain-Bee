@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dynamic Calendar with Google Sheets Events</title>
+<style>
+  body {
+    font-family: Arial, sans-serif;
+    line-height: 1.6;
+    margin: 20px;
+  }
+  .calendar {
+    display: grid;
+    grid-template-columns: repeat(7, calc(14.28% - 5px)); /* Adjusted width for day boxes */
+    gap: 5px;
+  }
+  .day {
+    position: relative;
+    padding: 15px; /* Increased padding for day boxes */
+    border: 1px solid #ccc;
+    text-align: center;
+    overflow: hidden; /* Prevent overflow of label */
+    white-space: nowrap; /* Prevent wrapping of label */
+  }
+  .header {
+    font-weight: bold;
+    text-align: center;
+    margin-bottom: 10px;
+  }
+  .controls {
+    text-align: center;
+    margin-bottom: 20px;
+  }
+  .special-day {
+    background-color: yellow;
+  }
+  .label {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 0.8em;
+    color: red;
+    white-space: nowrap;
+    pointer-events: none; /* Prevent label from blocking click events */
+  }
+</style>
+</head>
+<body>
+  <h1>Dynamic Calendar with Google Sheets Events</h1>
+  
+  <div class="controls">
+    <button onclick="prevMonth()">Previous Month</button>
+    <span id="monthYear"></span>
+    <button onclick="nextMonth()">Next Month</button>
+  </div>
+  
+  <div class="calendar" id="calendar">
+    <!-- Days will be generated dynamically -->
+  </div>
+
+  <script>
+    var currentDate = new Date(); // Current date by default
+    var currentMonth = currentDate.getMonth();
+    var currentYear = currentDate.getFullYear();
+    var monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+
+    // URL to your Google Sheets document
+    const googleSheetsUrl = 'https://docs.google.com/spreadsheets/d/1WpoIF2B9fBGtfN71fcsvAkBC8Pt6G3u8gK9roFLVzYg/gviz/tq?tqx=out:json';
+
+    function fetchGoogleSheetData(url) {
+      return fetch(url)
+        .then(response => response.text())
+        .then(data => {
+          const jsonMatch = data.match(/google\.visualization\.Query\.setResponse\((.*?)\);/);
+          if (jsonMatch) {
+            const jsonData = JSON.parse(jsonMatch[1]);
+            const events = {};
+
+            // Iterate over the rows in the Google Sheets data
+            const rows = jsonData.table.rows;
+            rows.forEach(row => {
+              const dateString = row.c[0].v;
+              const event = row.c[1].v;
+
+              // Store event in the events object with date as key
+              events[dateString] = event;
+            });
+
+            return events;
+          } else {
+            console.error('Error parsing Google Sheets data.');
+            return {};
+          }
+        })
+        .catch(error => {
+          console.error('Error fetching Google Sheets data:', error);
+          return {};
+        });
+    }
+
+    function generateCalendar(month, year, events) {
+      var daysInMonth = new Date(year, month + 1, 0).getDate(); // Get number of days in month
+
+      var firstDay = new Date(year, month, 1).getDay(); // Get first day of the month (0-6)
+
+      var calendarDiv = document.getElementById('calendar');
+      calendarDiv.innerHTML = ''; // Clear previous calendar
+
+      // Create header for month and year
+      document.getElementById('monthYear').textContent = monthNames[month] + ' ' + year;
+
+      // Create day headers (Sun, Mon, ..., Sat)
+      var dayHeaders = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+      for (var i = 0; i < 7; i++) {
+        var headerDiv = document.createElement('div');
+        headerDiv.classList.add('day');
+        headerDiv.textContent = dayHeaders[i];
+        calendarDiv.appendChild(headerDiv);
+      }
+
+      // Create empty placeholders for days before the first day of the month
+      for (var i = 0; i < firstDay; i++) {
+        var emptyDiv = document.createElement('div');
+        emptyDiv.classList.add('day');
+        calendarDiv.appendChild(emptyDiv);
+      }
+
+      // Create days of the month
+      for (var i = 1; i <= daysInMonth; i++) {
+        var dayDiv = document.createElement('div');
+        dayDiv.classList.add('day');
+        
+        // Check if current day has an event
+        var dateString = ('0' + (month + 1)).slice(-2) + '-' + ('0' + i).slice(-2) + '-' + year;
+        if (events[dateString]) {
+          dayDiv.classList.add('special-day');
+          var label = document.createElement('div');
+          label.classList.add('label');
+          label.textContent = events[dateString];
+          dayDiv.appendChild(label);
+          dayDiv.textContent = ''; // Remove day number if there's an event
+        } else {
+          dayDiv.textContent = i;
+        }
+
+        calendarDiv.appendChild(dayDiv);
+      }
+    }
+
+    function prevMonth() {
+      currentMonth--;
+      if (currentMonth < 0) {
+        currentMonth = 11;
+        currentYear--;
+      }
+      fetchGoogleSheetData(googleSheetsUrl)
+        .then(events => {
+          generateCalendar(currentMonth, currentYear, events);
+        });
+    }
+
+    function nextMonth() {
+      currentMonth++;
+      if (currentMonth > 11) {
+        currentMonth = 0;
+        currentYear++;
+      }
+      fetchGoogleSheetData(googleSheetsUrl)
+        .then(events => {
+          generateCalendar(currentMonth, currentYear, events);
+        });
+    }
+
+    // Initial calendar generation
+    fetchGoogleSheetData(googleSheetsUrl)
+      .then(events => {
+        generateCalendar(currentMonth, currentYear, events);
+      });
+  </script>
+</body>
+</html>
